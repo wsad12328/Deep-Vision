@@ -4,6 +4,8 @@ WARNING: you SHOULD NOT use ".to()" or ".cuda()" in each implementation block.
 """
 import torch
 import random
+import numpy as np
+import torch.nn.functional
 from utils import Solver
 from helper import svm_loss, softmax_loss
 from fc_networks import *
@@ -20,7 +22,7 @@ class Conv(object):
 
   @staticmethod
   def forward(x, w, b, conv_param):
-    """
+    """ 
     A naive implementation of the forward pass for a convolutional layer.
     The input consists of N data points, each with C channels, height H and
     width W. We convolve each input with F different filters, where each filter
@@ -52,7 +54,21 @@ class Conv(object):
     # Note that you are NOT allowed to use anything in torch.nn in other places. #
     ##############################################################################
     # Replace "pass" statement with your code
-    pass
+    N, C, H, W = x.shape
+    F, C, HH, WW = w.shape
+    pad = conv_param['pad']
+    stride = conv_param['stride']
+    x_pad = torch.nn.functional.pad(x, (pad, pad, pad, pad))
+    out_H = int(1 + (x_pad.shape[2] - HH) / stride)
+    out_W = int(1 + (x_pad.shape[3] - WW) / stride)
+    out = torch.zeros(N, F, out_H, out_W, dtype=torch.float64)
+    for n in range(N):
+      for f in range(F):
+        for H in range(out_H):
+          for W in range(out_W): 
+            start_H = H*stride
+            start_W = W*stride
+            out[n, f, H, W] = torch.sum(x_pad[n, :, start_H:start_H+HH, start_W:start_W+WW] * w[f]) + b[f]
     #############################################################################
     #                              END OF YOUR CODE                             #
     #############################################################################
@@ -78,7 +94,27 @@ class Conv(object):
     # TODO: Implement the convolutional backward pass.                          #
     #############################################################################
     # Replace "pass" statement with your code
-    pass
+    x, w, b, conv_param = cache
+    dx = torch.zeros_like(x)
+    dw = torch.zeros_like(w)
+    db = torch.zeros_like(b)
+    N, C, H, W = x.shape
+    F, C, HH, WW = w.shape
+    pad = conv_param['pad']
+    stride = conv_param['stride']
+    x_pad = torch.nn.functional.pad(x, (pad, pad, pad, pad))
+    dx_pad = torch.zeros_like(x_pad)
+
+    db = dout.sum(dim=(0, 2, 3))
+    for n in range(N):
+      for f in range(F):
+        for H in range(dout.shape[2]):
+          for W in range(dout.shape[3]): 
+            start_H = H*stride
+            start_W = W*stride
+            dx_pad[n, :, start_H:start_H+HH, start_W:start_W+WW] += w[f] * dout[n, f, H, W] 
+            dw[f] += x_pad[n, :, start_H:start_H+HH, start_W:start_W+WW] * dout[n, f, H, W] 
+    dx = dx_pad[:, :, pad:-pad, pad:-pad]
     #############################################################################
     #                              END OF YOUR CODE                             #
     #############################################################################
@@ -111,7 +147,23 @@ class MaxPool(object):
     # TODO: Implement the max-pooling forward pass                              #
     #############################################################################
     # Replace "pass" statement with your code
-    pass
+    N, C, H, W = x.shape
+    pool_height = pool_param['pool_height']
+    pool_width = pool_param['pool_width']
+    stride = pool_param['stride']
+    out_height = 1 + (H - pool_height) // stride
+    out_width = 1 + (H - pool_width) // stride
+    out = torch.zeros(N, C, out_height, out_width, dtype=torch.float64)
+
+    for h in range(out_height):
+      for w in range(out_width):
+        start_h = h*stride
+        start_w = w*stride
+        end_h = start_h+pool_height
+        end_w = start_w+pool_width
+        out[:, :, h, w] = torch.amax(x[:, :, start_h:end_h, start_w:end_w], dim=(-1, -2))
+
+    
     #############################################################################
     #                              END OF YOUR CODE                             #
     #############################################################################
@@ -133,7 +185,28 @@ class MaxPool(object):
     # TODO: Implement the max-pooling backward pass                             #
     #############################################################################
     # Replace "pass" statement with your code
-    pass
+    x, pool_param = cache
+    N, C, H, W = dout.shape
+    stride = pool_param['stride']
+    pool_height = pool_param['pool_height']
+    pool_width = pool_param['pool_width']
+
+    dx = torch.zeros_like(x)
+    for n in range(N):
+      for c in range(C):
+        for h in range(H):
+          for w in range(W):
+            start_h = h*stride
+            start_w = w*stride
+            end_h = start_h+pool_height
+            end_w = start_w+pool_width
+
+            region = x[n, c, start_h:end_h, start_w:end_w].reshape(1, 1, -1)
+            d_region = torch.zeros_like(x[n, c, start_h:end_h, start_w:end_w])
+            max_indices = torch.squeeze(torch.argmax(region, dim=-1)).item()
+            h_indices, w_indices = np.unravel_index(max_indices, (pool_height, pool_width))
+
+            dx[n, c, start_h:end_h, start_w:end_w][h_indices, w_indices] += dout[n, c, h, w]
     #############################################################################
     #                              END OF YOUR CODE                             #
     #############################################################################
