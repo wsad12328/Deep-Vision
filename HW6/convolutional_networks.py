@@ -441,7 +441,33 @@ class DeepConvNet(object):
     # to ones and zeros respectively.                                          #           
     ############################################################################
     # Replace "pass" statement with your code
-    pass
+
+    # {conv - [batchnorm?] - relu - [pool?]} x (L - 1) - linear
+
+    C = input_dims[0]
+    filter_H = 3
+    filter_W = 3
+    DT, DV = dtype, device
+    L = self.num_layers
+
+    for i in range(L-1):
+      self.params[f'W{i+1}'] = torch.normal(mean=0, std=weight_scale, size=(num_filters[i], C, filter_H, filter_W), dtype=DT, device=DV)
+      self.params[f'b{i+1}'] = torch.zeros(num_filters[i], dtype=DT, device=DV)
+      
+      if self.batchnorm:
+        self.params[f'gamma{i+1}'] = torch.ones(C, dtype=DT, device=DV)
+        self.params[f'beta{i+1}'] = torch.zeros(C, dtype=DT, device=DV)
+      C = num_filters[i]
+
+    out_H = input_dims[1] // 2 ** (len(max_pools))
+    out_W = input_dims[2] // 2 ** (len(max_pools))
+    hidden_dims = num_filters[L - 2] * out_H * out_W
+
+    self.params[f'W{L}'] = torch.normal(mean=0, std=weight_scale, size=(hidden_dims, num_classes), dtype=DT, device=DV)
+    self.params[f'b{L}'] = torch.zeros(num_classes, dtype=DT, device=DV)
+
+    # for key in self.params:
+    #   print(self.params[key].shape)
     ############################################################################
     #                             END OF YOUR CODE                             #
     ############################################################################
@@ -508,67 +534,6 @@ class DeepConvNet(object):
 
     print("load checkpoint file: {}".format(path))
 
-
-  def loss(self, X, y=None):
-    """
-    Evaluate loss and gradient for the deep convolutional network.
-    Input / output: Same API as ThreeLayerConvNet.
-    """
-    X = X.to(self.dtype)
-    mode = 'test' if y is None else 'train'
-
-    # Set train/test mode for batchnorm params since they
-    # behave differently during training and testing.
-    if self.batchnorm:
-      for bn_param in self.bn_params:
-        bn_param['mode'] = mode
-    scores = None
-
-    # pass conv_param to the forward pass for the convolutional layer
-    # Padding and stride chosen to preserve the input spatial size
-    filter_size = 3
-    conv_param = {'stride': 1, 'pad': (filter_size - 1) // 2}
-
-    # pass pool_param to the forward pass for the max-pooling layer
-    pool_param = {'pool_height': 2, 'pool_width': 2, 'stride': 2}
-
-    scores = None
-    ############################################################################
-    # TODO: Implement the forward pass for the DeepConvNet, computing the      #
-    # class scores for X and storing them in the scores variable.              #
-    #                                                                          #
-    # You should use the fast versions of convolution and max pooling layers,  #
-    # or the convolutional sandwich layers, to simplify your implementation.   #
-    ############################################################################
-    # Replace "pass" statement with your code
-    pass
-    ############################################################################
-    #                             END OF YOUR CODE                             #
-    ############################################################################
-
-    if y is None:
-      return scores
-
-    loss, grads = 0, {}
-    ############################################################################
-    # TODO: Implement the backward pass for the DeepConvNet, storing the loss  #
-    # and gradients in the loss and grads variables. Compute data loss using   #
-    # softmax, and make sure that grads[k] holds the gradients for             #
-    # self.params[k]. Don't forget to add L2 regularization!                   #
-    #                                                                          #
-    # NOTE: To ensure that your implementation matches ours and you pass the   #
-    # automated tests, make sure that your L2 regularization does not include  #
-    # a factor of 0.5                                                          #
-    ############################################################################
-    # Replace "pass" statement with your code
-    pass
-    ############################################################################
-    #                             END OF YOUR CODE                             #
-    ############################################################################
-
-    return loss, grads
-
-
   def save(self, path):
     checkpoint = {
       'reg': self.reg,
@@ -604,7 +569,6 @@ class DeepConvNet(object):
 
     print("load checkpoint file: {}".format(path))
 
-
   def loss(self, X, y=None):
     """
     Evaluate loss and gradient for the deep convolutional network.
@@ -637,49 +601,50 @@ class DeepConvNet(object):
     # or the convolutional sandwich layers, to simplify your implementation.   #
     ############################################################################
     # Replace "pass" statement with your code
-    DT, DV = X.dtype, X.device
-    NL = self.num_layers-1
-    cacheList = []
-    reg = torch.tensor(self.reg, dtype=DT, device=DV)
-    scores = X
-    L2reg = 0
-    max_pools = list(self.max_pools)
-    # {conv   - [batchnorm] - relu - [pool]} x (L - 1) - linear
-    for i in range(NL):
-      W = self.params[f'W{i+1}']
+
+    # {conv - [batchnorm?] - relu - [pool?]} x (L - 1) - linear
+
+    # DT, DV = X.dtype, X.device
+    L = self.num_layers
+    L2_reg = 0
+    cache_log = []
+    out = X
+    w = None
+    b = None
+    ### macro layer x L - 1
+    for i in range(L - 1):
+      w = self.params[f'W{i+1}']
       b = self.params[f'b{i+1}']
-      
-      # print(f'W{i+1}', W.shape)
-      # print(f'b{i+1}', b.shape)
-      
-      scores, cc = FastConv.forward(scores, W, b, conv_param)
-      cacheList.append(cc)
-      L2reg += torch.sum(W ** 2)
-      
+
+      L2_reg += torch.sum(w**2)
+      out, cache = FastConv.forward(out, w, b, conv_param)
+      cache_log.append(cache)
+
       if self.batchnorm:
         gamma = self.params[f'gamma{i+1}']
-        beta  = self.params[f'beta{i+1}']
-        bn_params = self.bn_params[i]
-        scores, cc = SpatialBatchNorm.forward(scores, gamma, beta, bn_params)
-        cacheList.append(cc)
-      scores, cc = ReLU.forward(scores)
-      cacheList.append(cc)
-      
-      if i in max_pools:
-        scores, cc = FastMaxPool.forward(scores, pool_param)
-        cacheList.append(cc)
-    i+=1
-    W = self.params[f'W{i+1}']
-    b = self.params[f'b{i+1}']
-    scores, cc = Linear.forward(scores, W, b)
-    cacheList.append(cc)
-    
-    L2reg += torch.sum(W ** 2)
-    L2reg *= self.reg
+        beta = self.params[f'beta{i+1}']
+        bn_param = self.bn_params[i]
+        out, cache = SpatialBatchNorm.forward(out, gamma, beta, bn_param)
+        cache_log.append(cache)
+
+      out,cache = ReLU.forward(out)
+      cache_log.append(cache)
+
+      if i in self.max_pools:
+        out, cache = FastMaxPool.forward(out, pool_param)
+        cache_log.append(cache)
+
+    ### linear layer x 1
+    w = self.params[f'W{L}']
+    b = self.params[f'b{L}']
+    L2_reg += torch.sum(w**2)
+    L2_reg *= self.reg
+    scores, cache = Linear.forward(out, w, b)  
+    cache_log.append(cache)
     ############################################################################
     #                             END OF YOUR CODE                             #
     ############################################################################
-
+    
     if y is None:
       return scores
 
@@ -695,34 +660,36 @@ class DeepConvNet(object):
     # a factor of 0.5                                                          #
     ############################################################################
     # Replace "pass" statement with your code
+
+    # {conv - [batchnorm?] - relu - [pool?]} x (L - 1) - linear
     loss, dscores = softmax_loss(scores, y)
-    loss += L2reg
-    
-    dout, grads[f'W{i+1}'], grads[f'b{i+1}'] = Linear.backward(dscores, cacheList.pop())
-    grads[f'W{i+1}'] += 2 * reg * self.params[f'W{i+1}']
-    i -= 1
-    while i >= 0:
-      if i in max_pools:
-        dout = FastMaxPool.backward(dout, cacheList.pop())
-      dout = ReLU.backward(dout, cacheList.pop())
+    loss += L2_reg
+    # print(loss)
+    dout, dw, db = Linear.backward(dscores, cache_log.pop())
+    grads[f'W{L}'] = dw + 2*self.reg*self.params[f'W{L}']
+    grads[f'b{L}'] = db + 2*self.reg*self.params[f'b{L}']
+
+    for i in range(L-2, -1, -1):
+
+      if i in self.max_pools:
+        dout = FastMaxPool.backward(dout, cache_log.pop())
+
+      dout = ReLU.backward(dout, cache_log.pop())
+      
       if self.batchnorm:
-        dout, dgamma, dbeta = SpatialBatchNorm.backward(dout, cacheList.pop())
+        dout, dgamma, dbeta = SpatialBatchNorm.backward(dout, cache_log.pop())
         grads[f'gamma{i+1}'] = dgamma
         grads[f'beta{i+1}'] = dbeta
-      dout, dw, db = FastConv.backward(dout, cacheList.pop())
-      grads[f'W{i+1}'] = dw + 2 * reg * dw
+
+      dout, dw, db = FastConv.backward(dout, cache_log.pop())
+      grads[f'W{i+1}'] = dw + 2*self.reg*self.params[f'W{i+1}']
       grads[f'b{i+1}'] = db
-      i-=1
-    # val = 0
-    # for key in self.params:
-    #   val += torch.sum(self.params[key]**2)
-    # loss += self.reg*val
-    ############################################################################
+    ###########################################################################
     #                             END OF YOUR CODE                             #
     ############################################################################
 
     return loss, grads
-
+  
 def find_overfit_parameters():
   weight_scale = 2e-3   # Experiment with this!
   learning_rate = 1e-5  # Experiment with this!
@@ -731,7 +698,8 @@ def find_overfit_parameters():
   # training accuracy within 30 epochs.                                      #
   ############################################################################
   # Replace "pass" statement with your code
-  pass
+  weight_scale = 1e-1  # Experiment with this!
+  learning_rate = 1e-3  # Experiment with this!
   ############################################################################
   #                             END OF YOUR CODE                             #
   ############################################################################
