@@ -91,7 +91,7 @@ def compute_numeric_gradient(f, x, dLdf=None, h=1e-7):
 
         # compute the partial derivative with centered formula
         dfdxi = (fxph - fxmh) / (2 * h)
-
+        dfdxi = dfdxi.to('cuda')
         # use chain rule to compute dLdx
         flat_grad[i] = dLdf.dot(dfdxi).item()
 
