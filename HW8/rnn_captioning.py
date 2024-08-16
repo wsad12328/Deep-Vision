@@ -102,7 +102,8 @@ def rnn_step_forward(x, prev_h, Wx, Wh, b):
     # Hint: You can use torch.tanh()                                             #
     ##############################################################################
     # Replace "pass" statement with your code
-    pass
+    next_h = torch.tanh(prev_h@Wh + x@Wx + b)
+    cache = (x, prev_h, Wx, Wh, next_h)
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -132,7 +133,13 @@ def rnn_step_backward(dnext_h, cache):
     # of the output value from tanh.                                             #
     ##############################################################################
     # Replace "pass" statement with your code
-    pass
+    x, prev_h, Wx, Wh, next_h = cache
+    dtanh = 1 - next_h**2
+    dx = dnext_h * dtanh @ Wx.T
+    dWx = x.T @ (dnext_h * dtanh)
+    dprev_h = dnext_h * dtanh @ Wh.T
+    dWh = prev_h.T @ (dnext_h * dtanh)
+    db = torch.sum(dnext_h * dtanh, dim=0)
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -164,7 +171,16 @@ def rnn_forward(x, h0, Wx, Wh, b):
     # above. You can use a for loop to help compute the forward pass.            #
     ##############################################################################
     # Replace "pass" statement with your code
-    pass
+    N, T, _ = x.shape
+    DT, DV = x.dtype, x.device
+    H, _ = Wh.shape
+    h = torch.empty(N, T, H, dtype=DT, device=DV)
+    prev_h = h0
+    cache = []
+    for i in range(T):
+      prev_h, ts_cache = rnn_step_forward(x[:,i,:], prev_h, Wx, Wh, b)
+      h[:,i,:] = prev_h
+      cache.append(ts_cache)
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -197,7 +213,22 @@ def rnn_backward(dh, cache):
     # defined above. You can use a for loop to help compute the backward pass.   #
     ##############################################################################
     # Replace "pass" statement with your code
-    pass
+    N, T, H = dh.shape
+    D = cache[0][0].shape[1]
+    DT, DV = dh.dtype, dh.device
+    dx = torch.zeros(N, T, D, dtype=DT, device=DV)
+    dh0 = torch.zeros(N, H, dtype=DT, device=DV)
+    dWx = torch.zeros(D, H, dtype=DT, device=DV)
+    dWh = torch.zeros(H, H, dtype=DT, device=DV)
+    db = torch.zeros(H, dtype=DT, device=DV)
+    temp_dprev = torch.zeros_like(dh0, dtype=DT, device=DV)
+    for i in range(T):
+      dx[:,T-i-1,:], temp_dprev, temp_dWx, temp_dWh, temp_b = rnn_step_backward(dh[:,T-i-1,:] + temp_dprev, cache.pop())
+      dWx += temp_dWx
+      dWh += temp_dWh
+      db += temp_b
+    dh0 = temp_dprev
+    
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -281,7 +312,8 @@ class WordEmbedding(nn.Module):
       
       # Register parameters
       self.W_embed = Parameter(torch.randn(vocab_size, embed_size,
-                         device=device, dtype=dtype).div(math.sqrt(vocab_size)))
+                         device=device, dtype=
+                         dtype).div(math.sqrt(vocab_size)))
       
   def forward(self, x):
       out = None
@@ -291,7 +323,7 @@ class WordEmbedding(nn.Module):
       # HINT: This can be done in one line using PyTorch's array indexing.         #
       ##############################################################################
       # Replace "pass" statement with your code
-      pass
+      out = self.W_embed[x]
       ##############################################################################
       #                               END OF YOUR CODE                             #
       ##############################################################################
@@ -334,7 +366,7 @@ def temporal_softmax_loss(x, y, ignore_index=None):
     # all timesteps and *averaging* across the minibatch.                        #
     ##############################################################################
     # Replace "pass" statement with your code
-    pass
+    loss = nn.functional.cross_entropy(x.reshape(-1, x.size(-1)), y.reshape(-1), ignore_index=ignore_index, reduction='sum') / x.shape[0]
     ##############################################################################
     #                               END OF YOUR CODE                             #
     ##############################################################################
@@ -397,10 +429,14 @@ class CaptioningRNN(nn.Module):
         #       feature and pooling=False to get the CNN activation map.         #
         ##########################################################################
         # Replace "pass" statement with your code
-        pass
-        #############################################################################
-        #                              END OF YOUR CODE                             #
-        #############################################################################
+        self.FeatureExtractor = FeatureExtractor(pooling=True, device=device, dtype=dtype)
+        self.Projector_h0 = nn.Linear(input_dim, hidden_dim, device=device, dtype=dtype)
+        self.WordEmbedding = WordEmbedding(vocab_size=vocab_size, embed_size=wordvec_dim, device=device, dtype=dtype)
+        self.RNN = RNN(input_size=wordvec_dim, hidden_size=hidden_dim, device=device, dtype=dtype)
+        self.Projector_output = nn.Linear(hidden_dim, vocab_size, device=device, dtype=dtype)
+        ##########################################################################
+        #                              END OF YOUR CODE                          #
+        ##########################################################################
     
     def forward(self, images, captions):
         """
@@ -445,7 +481,12 @@ class CaptioningRNN(nn.Module):
         # Do not worry about regularizing the weights or their gradients!          #
         ############################################################################
         # Replace "pass" statement with your code
-        pass
+        feature_vector = self.FeatureExtractor.extract_mobilenet_feature(images)
+        h0 = self.Projector_h0(feature_vector)
+        word_vector = self.WordEmbedding.forward(captions_in)
+        rnn_feature = self.RNN(word_vector, h0)
+        rnn_fc_output = self.Projector_output(rnn_feature)
+        loss = temporal_softmax_loss(rnn_fc_output, captions_out, self.ignore_index)
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -499,7 +540,17 @@ class CaptioningRNN(nn.Module):
         # NOTE: We are still working over minibatches in this function.           #
         ###########################################################################
         # Replace "pass" statement with your code
-        pass
+        feature_vector = self.FeatureExtractor.extract_mobilenet_feature(images)
+        h0 = self.Projector_h0(feature_vector)
+        prev_h = h0
+        current_word = self._start
+        current_word = torch.empty(N, dtype=torch.int32).fill_(self._start)
+        for i in range(max_length):
+          current_word_vector = self.WordEmbedding.forward(current_word)
+          prev_h = self.RNN.step_forward(current_word_vector, prev_h)
+          scores = self.Projector_output(prev_h)
+          captions[:,i] = torch.argmax(scores, dim=1)
+          current_word = captions[:,i]
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
