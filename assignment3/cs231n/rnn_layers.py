@@ -193,16 +193,14 @@ def rnn_backward(dh, cache):
     dh0 = np.zeros((N, H))
     dWx = np.zeros((D, H))
     dWh = np.zeros((H, H))
-    db = np.zeros(H)   
-    temp_dprev = np.zeros((N, H))
-
+    db = np.zeros(H)
+    temp_dprev = np.zeros_like(dh0)
     for i in range(T):
-        dx[:,T-i-1,:], temp_dprevh, temp_dWx, temp_dWh, temp_db = rnn_step_backward(dh[:,T-i-1,:] + temp_dprev, cache.pop())
-        dWx += temp_dWx
-        dWh += temp_dWh
-        db += temp_db
- 
-    dh0 = temp_dprevh    
+      dx[:,T-i-1,:], temp_dprev, temp_dWx, temp_dWh, temp_b = rnn_step_backward(dh[:,T-i-1,:] + temp_dprev, cache.pop())
+      dWx += temp_dWx
+      dWh += temp_dWh
+      db += temp_b
+    dh0 = temp_dprev
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
