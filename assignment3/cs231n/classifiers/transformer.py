@@ -90,7 +90,13 @@ class CaptioningTransformer(nn.Module):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        captions_emb = self.embedding(captions)
+        decoder_input = captions_emb + self.positional_encoding(captions_emb)
+        features_proj = self.visual_projection(features).unsqueeze(1)
+        tgt_mask = torch.tril(torch.ones(T, T)).bool()
+
+        decoder_output = self.transformer(decoder_input, features_proj, tgt_mask)
+        scores = self.output(decoder_output)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -116,7 +122,7 @@ class CaptioningTransformer(nn.Module):
 
             # Create an empty captions tensor (where all tokens are NULL).
             captions = self._null * np.ones((N, max_length), dtype=np.int32)
-
+    
             # Create a partial caption, with only the start token.
             partial_caption = self._start * np.ones(N, dtype=np.int32)
             partial_caption = torch.LongTensor(partial_caption)
@@ -124,7 +130,6 @@ class CaptioningTransformer(nn.Module):
             partial_caption = partial_caption.unsqueeze(1)
 
             for t in range(max_length):
-
                 # Predict the next token (ignoring all other time steps).
                 output_logits = self.forward(features, partial_caption)
                 output_logits = output_logits[:, -1, :]
@@ -136,6 +141,7 @@ class CaptioningTransformer(nn.Module):
                 # Update our overall caption and our current partial caption.
                 captions[:, t] = word.numpy()
                 word = word.unsqueeze(1)
+
                 partial_caption = torch.cat([partial_caption, word], dim=1)
 
             return captions
@@ -214,8 +220,7 @@ class TransformerDecoder(nn.Module):
 
     def forward(self, tgt, memory, tgt_mask=None):
         output = tgt
-
-        for mod in self.layers:
+        for idx, mod in enumerate(self.layers):
             output = mod(output, memory, tgt_mask=tgt_mask)
 
         return output

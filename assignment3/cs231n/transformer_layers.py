@@ -38,7 +38,10 @@ class PositionalEncoding(nn.Module):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        for i in range(0, max_len, 1):
+          for j in range(0, embed_dim, 2):
+            pe[0,i,j] = math.sin(i*10000**(-j/embed_dim))
+            pe[0,i,j+1] =  math.cos(i*10000**(-j/embed_dim))
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -69,8 +72,9 @@ class PositionalEncoding(nn.Module):
         # afterward. This should only take a few lines of code.                    #
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-        pass
+        
+        output = x + self.pe[:,:S,:]
+        output = self.dropout(output)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -165,8 +169,18 @@ class MultiHeadAttention(nn.Module):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        Q = self.query(query).view(N, S, self.n_head, self.head_dim).permute(0, 2, 1, 3)
+        K = self.key(key).view(N, T, self.n_head, self.head_dim).permute(0, 2, 3, 1)
+        V = self.value(value).view(N, T, self.n_head, self.head_dim).permute(0, 2, 1, 3)
 
+        A = torch.matmul(Q, K) / math.sqrt(self.head_dim)
+        if attn_mask is not None:
+          A = A.masked_fill(~attn_mask, -torch.inf)
+
+        A = self.attn_drop(F.softmax(A, dim=-1)) 
+        O = torch.matmul(A, V).permute(0, 2, 1, 3).reshape(N, S, self.emd_dim)
+        output = self.proj(O)
+        
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
         #                             END OF YOUR CODE                             #
