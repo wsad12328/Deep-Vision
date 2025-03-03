@@ -30,7 +30,8 @@ def sample_noise(batch_size, dim, seed=None):
 
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    z = 2*torch.rand(size=(batch_size, dim)) - 1
+    return z
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
@@ -51,8 +52,23 @@ def discriminator(seed=None):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    class Discriminator(nn.Module):
+        def __init__(self):
+            super(Discriminator, self).__init__()
+            self.D = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(784, 256),
+                nn.LeakyReLU(0.01),
+                nn.Linear(256, 256),
+                nn.LeakyReLU(0.01),
+                nn.Linear(256, 1)
+            )
 
+        def forward(self, x):
+            output = self.D(x)
+            return output
+        
+    model = Discriminator()
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
     #                               END OF YOUR CODE                             #
@@ -76,8 +92,23 @@ def generator(noise_dim=NOISE_DIM, seed=None):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    class Generator(nn.Module):
+        def __init__(self):
+            super(Generator, self).__init__()
+            self.G = nn.Sequential(
+                nn.Linear(noise_dim, 1024),
+                nn.ReLU(),
+                nn.Linear(1024, 1024),
+                nn.ReLU(),
+                nn.Linear(1024, 784),
+                nn.Tanh(),
+            )
 
+        def forward(self, z):
+            output = self.G(z)
+            return output
+
+    model = Generator()
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
     #                               END OF YOUR CODE                             #
@@ -111,8 +142,8 @@ def discriminator_loss(logits_real, logits_fake):
     """
     loss = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-    pass
+  
+    loss = bce_loss(logits_real, torch.ones_like(logits_real.squeeze())) + bce_loss(logits_fake, torch.zeros_like(logits_fake.squeeze()))
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     return loss
@@ -130,7 +161,7 @@ def generator_loss(logits_fake):
     loss = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    loss = bce_loss(logits_fake, torch.ones_like(logits_fake.squeeze()))
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     return loss
@@ -149,7 +180,7 @@ def get_optimizer(model):
     optimizer = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    optimizer = optim.Adam(params=model.parameters(), lr=1e-3, betas=(0.5, 0.999))
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     return optimizer
@@ -168,8 +199,11 @@ def ls_discriminator_loss(scores_real, scores_fake):
     loss = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    scores_real = scores_real.squeeze()
+    scores_fake = scores_fake.squeeze()
 
+    loss = 0.5*((scores_real - 1)**2 + (scores_fake - 0)**2)
+    loss = loss.mean()
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     return loss
 
@@ -186,7 +220,9 @@ def ls_generator_loss(scores_fake):
     loss = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    scores_fake = scores_fake.squeeze()
+    loss = 0.5*(scores_fake - 1)**2
+    loss = loss.mean()
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     return loss
@@ -204,7 +240,29 @@ def build_dc_classifier(batch_size):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    class Discriminator(nn.Module):
+        def __init__(self):
+            super(Discriminator, self).__init__()
+            self.D = nn.Sequential(
+                nn.Conv2d(in_channels=1, out_channels=32, kernel_size=5, stride=1),
+                nn.LeakyReLU(0.01),
+                nn.MaxPool2d(kernel_size=2, stride=2),
+                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=5, stride=1),
+                nn.LeakyReLU(0.01),
+                nn.MaxPool2d(kernel_size=2, stride=2),
+                Flatten(),
+                nn.Linear(4*4*64, 4*4*64),
+                nn.LeakyReLU(0.01),
+                nn.Linear(4*4*64, 1)
+            )
+
+        def forward(self, x):
+            output = self.D(x)
+            return output
+        
+    model = Discriminator()
+
+    return model
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -225,8 +283,31 @@ def build_dc_generator(noise_dim=NOISE_DIM):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    class Generator(nn.Module):
+        def __init__(self):
+            super(Generator, self).__init__()
+            self.G = nn.Sequential(
+                nn.Linear(noise_dim, 1024),
+                nn.ReLU(),
+                nn.BatchNorm1d(num_features=1024),
+                nn.Linear(1024, 7*7*128),
+                nn.ReLU(),
+                nn.BatchNorm1d(num_features=7*7*128),
+                Unflatten(),
+                nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=4, stride=2, padding=1),
+                nn.ReLU(),
+                nn.ConvTranspose2d(in_channels=64, out_channels=1, kernel_size=4, stride=2, padding=1),
+                nn.Tanh(),
+                Flatten()
+            )
 
+        def forward(self, z):
+            output = self.G(z)
+            return output
+
+    model = Generator()
+
+    return model
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
     #                               END OF YOUR CODE                             #
