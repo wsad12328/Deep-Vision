@@ -1,3 +1,4 @@
 cs231n/datasets/coco_captioning/
 pretrained_model/
 data/
+mnist/
